@@ -1037,7 +1037,7 @@ function renderMesesGrid(){
     const nome=typeof m==='string'?m:m.nome;
     const info=typeof m==='object'&&m.totalLinhas?' <span style="font-size:10px;opacity:.7">'+m.totalLinhas.toLocaleString('pt-BR')+' linhas</span>':'';
     const sel=mesesSelecionados.includes(nome);
-    return '<div class="mes-check'+(sel?' selected':'')+'" onclick="toggleMes(''+nome+'',this)">'+nome+info+'</div>';
+    return '<div class="mes-check'+(sel?' selected':'')+'" onclick="toggleMes(\''+nome+'\',this)">'+nome+info+'</div>';
   }).join('');
 }
 
