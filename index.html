@@ -839,66 +839,12 @@ async function carregarMes(nomeMes){
 
   setStatus('⬇️ Carregando '+nomeMes+'…');
 
-  // Buscar todos os dados do mês em paralelo
-  const [statusData, produtosData, diarioData] = await Promise.all([
-    fetch(BACKEND_URL+'/status').then(r=>r.json()),
-    fetch(BACKEND_URL+'/top-produtos').then(r=>r.json()),
-    fetch(BACKEND_URL+'/diario').then(r=>r.json()),
-  ]);
+  const resp = await fetch(BACKEND_URL+'/dados-mes?mes='+encodeURIComponent(nomeMes));
+  const rows = await resp.json();
+  if(rows.erro) throw new Error(rows.erro);
 
-  // Montar rows sintéticos compatíveis com processFile()
-  // Cada linha de status vira N linhas com STATUS PEDIDO preenchido
-  const rows = [];
-
-  // Usar o total do resumo para este mês
-  const totalMes = mesInfo ? mesInfo.totalLinhas : 0;
-
-  // Distribuir status proporcionalmente (dados globais do backend)
-  const totalGlobal = statusData.reduce((s,x)=>s+x.total,0);
-  statusData.forEach(st=>{
-    const qtdMes = totalGlobal > 0 ? Math.round((st.total/totalGlobal)*totalMes) : 0;
-    for(let i=0;i<qtdMes;i++){
-      rows.push({'STATUS PEDIDO': st.STATUS, 'PRODUTOS':'', 'TAG':'', 'CIDADE':'', 'DATA':''});
-    }
-  });
-
-  // Adicionar linhas com DATA para o gráfico diário (filtradas por mês)
-  const diasMes = diarioData.filter(d=>{
-    if(!d.dia) return false;
-    const parts = d.dia.split('-');
-    return parseInt(parts[1]) === mesNum;
-  });
-
-  // Substituir as rows por versão com DATA preenchida
-  // Reconstruir: para cada dia, adicionar linhas com a data
-  const rowsComData = [];
-  diasMes.forEach(d=>{
-    for(let i=0;i<d.total_pedidos;i++){
-      rowsComData.push({'STATUS PEDIDO':'', 'PRODUTOS':'', 'TAG':'', 'CIDADE':'', 'DATA': d.dia});
-    }
-  });
-
-  // Combinar: usar diasMes para dailyCounts e statusData para statusCounts
-  // A abordagem mais limpa: passar dados direto para monthsData sem usar processFile
-  const sc={}, tc={}, pc={}, cc={}, dc={};
-  statusData.forEach(st=>{
-    const qtdMes = totalGlobal > 0 ? Math.round((st.total/totalGlobal)*totalMes) : 0;
-    if(qtdMes>0) sc[st.STATUS] = qtdMes;
-  });
-  produtosData.forEach(p=>{ if(p.PRODUTOS) pc[p.PRODUTOS]=p.qtd_pedidos; });
-  diasMes.forEach(d=>{ const day=d.dia.split('-')[2]; dc[day]=d.total_pedidos; });
-
-  // Montar rows sintéticos com DATA para compatibilidade total com renderStatusTab (dayCount)
-  const finalRows = [];
-  diasMes.forEach(d=>{
-    const day = d.dia.split('-')[2];
-    for(let i=0;i<d.total_pedidos;i++){
-      finalRows.push({'STATUS PEDIDO':'', 'PRODUTOS':'', 'TAG':'', 'CIDADE':'', 'DATA': d.dia});
-    }
-  });
-
-  if(fechado) cacheLocal[cacheKey]={rows:finalRows,sc,tc,pc,cc,dc,timestamp:Date.now()};
-  return {rows:finalRows, sc, tc, pc, cc, dc, fromCache:false};
+  if(fechado) cacheLocal[cacheKey]={rows, timestamp:Date.now()};
+  return {rows, fromCache:false};
 }
 
 async function carregarMesesSelecionados(){
@@ -907,30 +853,12 @@ async function carregarMesesSelecionados(){
   monthsData={};
   try{
     for(const mes of mesesSelecionados){
+      const {rows, fromCache} = await carregarMes(mes);
+      processFile(mes, rows);
       const mesInfo = mesesDisponiveis.find(m=>m.nome===mes);
-      const mesNum = mesInfo ? mesInfo.mesNum : 99;
-      const {rows, sc, tc, pc, cc, dc, fromCache} = await carregarMes(mes);
-
-      monthsData[mes]={
-        rows: rows,
-        rawRows: [...rows],
-        statusCounts: sc,
-        tagCounts: tc||{},
-        prodCounts: pc,
-        cityCounts: cc||{},
-        dailyCounts: dc,
-        monthOrder: mesNum,
-      };
-      setStatus(fromCache?'📦 '+mes+' (cache)':'✅ '+mes+' — '+mesInfo.totalLinhas.toLocaleString('pt-BR')+' pedidos','ok');
+      setStatus(fromCache?'📦 '+mes+' (cache)':'✅ '+mes+' — '+rows.length.toLocaleString('pt-BR')+' linhas','ok');
     }
 
-    // re-sort by calendar
-    const sorted={};
-    Object.keys(monthsData).sort((a,b)=>monthsData[a].monthOrder-monthsData[b].monthOrder).forEach(k=>{sorted[k]=monthsData[k];});
-    monthsData=sorted;
-
-    renderFileChips();
-    renderDashboard();
     document.getElementById('btnAtualizar').style.display='inline-flex';
     document.getElementById('btnTrocarMeses').style.display='inline-flex';
     document.getElementById('mesSelector').style.display='none';
